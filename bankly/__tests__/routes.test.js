@@ -10,6 +10,7 @@ const bcrypt = require("bcrypt");
 const createToken = require("../helpers/createToken");
 const jwt = require("jsonwebtoken");
 const { SECRET_KEY } = require("../config");
+const { response } = require("../app");
 
 // tokens for our sample users
 const tokens = {};
@@ -84,16 +85,38 @@ describe("POST /auth/login", function () {
     expect(username).toBe("u1");
     expect(admin).toBe(false);
   });
+
+  // TEST BUG #2
+  test("BUG 2 - after login assign admin true only if it's admin else false", async function () {
+    const response = await request(app).post("/auth/login").send({
+      username: "u3",
+      password: "pwd3",
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toEqual({ token: expect.any(String) });
+
+    let { username, admin } = jwt.verify(response.body.token, SECRET_KEY);
+    expect(username).toBe("u3");
+    expect(admin).toBe(true);
+  });
+
+  // TEST BUG #3
+  test("BUG 3 - don't allow login for wrong password of a user", async function () {
+    const response = await request(app)
+      .post("/auth/login")
+      .send({ username: "u1", password: "hack" });
+    expect(response.statusCode).toBe(401);
+  });
 });
 
 describe("GET /users", function () {
-  test("should deny access if no token provided", async function () {
+  test("BUG 1 - should deny access if no token provided", async function () {
     const response = await request(app).get("/users");
     expect(response.statusCode).toBe(401);
   });
 
-  // TESTS BUG #1
-  test("should deny access if wrong token is provided", async function () {
+  // TEST BUG #1
+  test("BUG 1 - should deny access if wrong token is provided", async function () {
     const response = await request(app).get("/users").send({
       _token:
         "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VybmFtZSI6InUxIiwiYWRtaW4iOmZhbHNlLCJpYXQiOjE2NjIzMjg5NjB9.",
@@ -134,6 +157,15 @@ describe("GET /users/[username]", function () {
 describe("PATCH /users/[username]", function () {
   test("should deny access if no token provided", async function () {
     const response = await request(app).patch("/users/u1");
+    expect(response.statusCode).toBe(401);
+  });
+
+  // Bug 5
+  test("BUG 5 shouldn't be able to update admin if not admin", async function () {
+    const response = await request(app).path("/users/u1").send({
+      _token: tokens.u1,
+      admin: true,
+    });
     expect(response.statusCode).toBe(401);
   });
 
@@ -186,6 +218,14 @@ describe("DELETE /users/[username]", function () {
       .delete("/users/u1")
       .send({ _token: tokens.u1 });
     expect(response.statusCode).toBe(401);
+  });
+
+  // TEST BUG 4
+  test("BUG 4 - should delete a user", async function () {
+    const response = await request(app)
+      .delete("/users/u1")
+      .send({ _token: tokens.u1 });
+    expect(response.statusCode).toBe(200);
   });
 
   test("should allow if admin", async function () {
